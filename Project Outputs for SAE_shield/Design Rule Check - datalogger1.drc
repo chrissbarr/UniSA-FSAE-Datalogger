@@ -1,0 +1,36 @@
+Protel Design System Design Rule Check
+PCB File : C:\Users\Chris\Documents\GitHub\SAE_shield\datalogger1.PcbDoc
+Date     : 21-Sep-15
+Time     : 7:48:45 PM
+
+Processing Rule : Width Constraint (Min=0.25mm) (Max=2mm) (Preferred=0.5mm) ((InNet('3.3V') OR InNet('5V') OR InNet('GND') OR InNet('VCC')))
+Rule Violations :0
+
+Processing Rule : Hole Size Constraint (Min=0.025mm) (Max=3.5mm) (All)
+Rule Violations :0
+
+Processing Rule : Width Constraint (Min=0.25mm) (Max=1mm) (Preferred=0.25mm) (All)
+Rule Violations :0
+
+Processing Rule : Power Plane Connect Rule(Relief Connect )(Expansion=0.5mm) (Conductor Width=0.25mm) (Air Gap=0.25mm) (Entries=4) (All)
+Rule Violations :0
+
+Processing Rule : Clearance Constraint (Gap=0.254mm) (All),(All)
+Rule Violations :0
+
+Processing Rule : Un-Routed Net Constraint ( (All) )
+   Violation between Un-Routed Net Constraint: Net NetC6_2 Between Pad C6-2 (68.895,58.841mm) And Pad R6-1 (85.987,59.222mm)
+   Violation between Un-Routed Net Constraint: Net NetC5_2 Between Pad C5-2 (63.561,58.841mm) And Pad R5-1 (81.669,59.222mm)
+   Violation between Un-Routed Net Constraint: Net GND Between Pad C5-1 (62.161,58.841mm) And Pad C6-1 (67.495,58.841mm)
+   Violation between Un-Routed Net Constraint: Net GND Between Pad C5-1 (62.161,58.841mm) And Pad P16-4 (63.5,45.72mm)
+   Violation between Un-Routed Net Constraint: Net CAN_LOW Between Pad U2-6 (47.866,37.115mm) And Pad R5-2 (83.169,59.222mm)
+   Violation between Un-Routed Net Constraint: Net CAN_HIGH Between Pad U2-7 (47.866,38.385mm) And Pad R6-2 (87.487,59.222mm)
+   Violation between Un-Routed Net Constraint: Net 5V Between Track on layer Top Layer (42.569,37.05mm) And Pad C3-2 (48.7,34.25mm)
+Rule Violations :7
+
+Processing Rule : Short-Circuit Constraint (Allowed=No) (All),(All)
+Rule Violations :0
+
+
+Violations Detected : 7
+Time Elapsed        : 00:00:01

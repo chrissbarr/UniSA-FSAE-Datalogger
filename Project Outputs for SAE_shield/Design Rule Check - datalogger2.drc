@@ -1,0 +1,29 @@
+Protel Design System Design Rule Check
+PCB File : S:\Dropbox\Stuff\SAE-datalogger\SAE_shield\datalogger2.PcbDoc
+Date     : 14-Oct-15
+Time     : 8:08:06 PM
+
+Processing Rule : Width Constraint (Min=0.25mm) (Max=2mm) (Preferred=0.5mm) ((InNet('3.3V') OR InNet('5V') OR InNet('GND') OR InNet('VCC')))
+Rule Violations :0
+
+Processing Rule : Hole Size Constraint (Min=0.025mm) (Max=3.5mm) (All)
+Rule Violations :0
+
+Processing Rule : Width Constraint (Min=0.25mm) (Max=2mm) (Preferred=0.25mm) (All)
+Rule Violations :0
+
+Processing Rule : Power Plane Connect Rule(Relief Connect )(Expansion=0.5mm) (Conductor Width=0.25mm) (Air Gap=0.25mm) (Entries=4) (All)
+Rule Violations :0
+
+Processing Rule : Clearance Constraint (Gap=0.25mm) (All),(All)
+Rule Violations :0
+
+Processing Rule : Un-Routed Net Constraint ( (All) )
+Rule Violations :0
+
+Processing Rule : Short-Circuit Constraint (Allowed=No) (All),(All)
+Rule Violations :0
+
+
+Violations Detected : 0
+Time Elapsed        : 00:00:01
