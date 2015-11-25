@@ -1,4 +1,4 @@
-# UniSA-FSAE-Datalogger
+# UniSA FSAE Datalogger
 This is an Arduino shield designed to be used for logging data on the UniSA SAE Team's vehicle. It provides interfaces to various components - primarily sensors, but there are also user-interface elements as well.
 
 ## Connections
