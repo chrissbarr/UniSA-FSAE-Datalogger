@@ -341,6 +341,7 @@ void status_draw() {
   if(menu_changed) {
     blankScreen = true;
     menu_changed = false;
+    indicatorsJustChanged = true;
   }
 
 
