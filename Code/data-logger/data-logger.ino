@@ -20,6 +20,7 @@
 #define ANALOG_INPUTS
 
 
+#include <stdio.h>
 
 //NFC Setup
 #if ENABLED(NFC)
@@ -49,7 +50,7 @@
   #include <SPI.h>
   
   //#define VERBOSE_DISPLAY
-  //#define SPLASH_SCREEN_ENABLED
+  #define SPLASH_SCREEN_ENABLED
   #define SPLASH_IMAGE "splash.bmp" //file to load from SD card. 
   #define SPLASH_DURATION 1000 //display duration in milliseconds
   
@@ -146,8 +147,6 @@ int loop_index = 0;
 //menu structure
 #define MENU_OPTIONS 6
 #define MENU_OPTION_HEIGHT 10
-String menu_options[MENU_OPTIONS] = {"Item 0", "Item 1", "Item 2", "Item 3"};
-bool menu_option_values[MENU_OPTIONS] = {false,false,false,false};
 int menu_selected_index = 0;
 bool menu_changed = false;
 bool menu_changed_small = false;
@@ -173,10 +172,58 @@ typedef struct menuOption {
 struct menuOption menuArray[MENU_OPTIONS];
 
 
+//variables to format and display to driver
+
+enum display_variables {
+  V_SPEED,
+  V_SPEED_AVG,
+  V_RPM,
+  V_VOLTS,
+  V_TEMP,
+  V_AMPS,
+  V_POWER
+};
+
+enum variable_types {
+  INT,
+  FLOAT,
+  BOOL,
+  STRING
+};
+
+#define NUM_VARIABLES 4
+
+typedef struct displayVariable {
+  int type;
+  int intVal;
+  float floatVal;
+  bool boolVal;
+  String stringVal;
+  String displaySymbol;
+  String displayPrefix;
+  String displaySuffix;
+  int decPoints;
+  bool valChanged;
+  int symOffset;
+};
+
+struct displayVariable displayVariables[NUM_VARIABLES];
+
+long randNumber;
+int activeVariableBig = 0;
+int activeVariableSmall1 = 0;
+int activeVariableSmall2 = 0;
+bool indicatorsJustChanged = false;
+
+#define BATT_PIN A13
+#define BATT_R1 10000
+#define BATT_R2 4000
+
 void setup(void) {
   Serial.begin(115200);
 
   menu_init();
+  variables_init();
 
   pinMode(cs, OUTPUT);
   digitalWrite(cs, HIGH);  
@@ -216,15 +263,15 @@ void setup(void) {
       tft.setTextSize(1);
       while(1 < 2);
     }
-    tft.setTextColor(WHITE);  
+    tft.setTextColor(WHITE); 
+
+    delay(500);
+
+    tft.fillScreen(BLACK);  
     
   #endif
 
-
-
-  delay(500);
-
-
+  randomSeed(analogRead(0));
 }
 
 void loop(void) {
@@ -232,7 +279,7 @@ void loop(void) {
   loop_timing(); 
 
   if(loop_index == 0) {
-    
+    calculate_voltage();
     loop_index++;
   } else if (loop_index == 1) {
     gps_update();
@@ -258,84 +305,14 @@ void loop(void) {
   //nfc_update();
   update_actions();
 
-}
+  randNumber = random(10);
 
-void analog_update() {
-  analog1 = analogRead(ANALOG1);
-  analog2 = analogRead(ANALOG2);
-  analog3 = analogRead(ANALOG3);
-  analog4 = analogRead(ANALOG4);
-  analog5 = analogRead(ANALOG5);
-  analog6 = analogRead(ANALOG6);
-}
-
-void log_to_sd() {
-  if(menuArray[SD_LOGGING].curState == 1) {  
-    
-    String dataString = "";
-  
-    //log system time
-    dataString += String(millis()); 
-    dataString += "\t";
-  
-    //log analog values
-    dataString += String(analog1);
-    dataString += "\t";
-    dataString += String(analog2);
-    dataString += "\t";
-    dataString += String(analog3);
-    dataString += "\t";
-    dataString += String(analog4);
-    dataString += "\t";
-    dataString += String(analog5);
-    dataString += "\t";
-    dataString += String(analog6);
-    dataString += "\t";
-  
-    //log GPS data
-    dataString += String(gps.date.isValid());
-    dataString += "\t";
-  
-    char sz[32] = "**********";
-  
-    if(gps.date.isValid()) {
-      sprintf(sz, "%02d/%02d/%02d ", gps.date.month(), gps.date.day(), gps.date.year());
-    }
-    
-    
-    dataString += String(sz);
-    dataString += "\t";
-  
-    char st[32] = "********";
-      
-    if(gps.time.isValid()) {
-      sprintf(sz, "%02d:%02d:%02d ", gps.time.hour(), gps.time.minute(), gps.time.second());
-    }
-    
-    dataString += String(sz);
-    dataString += "\t";
-    dataString += String(gps.location.isValid());
-    dataString += "\t";
-    dataString += String(gps.location.lat());
-    dataString += "\t";
-    dataString += String(gps.location.lng());
-    dataString += "\t";
-  
-    dataFile = SD.open(fileName, O_CREAT | O_APPEND | O_WRITE);
-    
-    // if the file is available, write to it:
-    if (dataFile) {
-      dataFile.println(dataString);
-      dataFile.close();  
-      // print to the serial port too:
-      //Serial.println(dataString);
-    }
-    // if the file isn't open, pop up an error:
-    else {
-      Serial.println("error opening file for logging");
-      sd_new_logfile();
-    }
+  if(randNumber == 2) {
+    displayVariables[V_SPEED].floatVal += (random(-500,500)/1000.0);
+    displayVariables[V_SPEED].valChanged = true;
   }
+  
+
 }
 
 void sd_new_logfile() {
@@ -348,10 +325,50 @@ void sd_new_logfile() {
 }
 
 void status_draw() {
-  tft.fillScreen(BLACK);
-  tft.setTextColor(WHITE);
-  tft.setCursor(0,0);
-  tft.print("14.5V");
+
+  bool blankScreen = false;
+
+  if (button_up.pressedFor(LONG_PRESS) && indicatorsJustChanged == false) {
+    Serial.println("Changing big variable...");
+    activeVariableBig++;
+    indicatorsJustChanged = true;
+    blankScreen = true;
+  
+    if (activeVariableBig >= NUM_VARIABLES)
+      activeVariableBig = 0;
+  }
+
+  if(menu_changed) {
+    blankScreen = true;
+    menu_changed = false;
+  }
+
+
+  if(blankScreen) {
+    tft.fillScreen(BLACK);  
+    print_variable_big(activeVariableBig, 20, 20, 2, WHITE);
+  } 
+  
+  if(indicatorsJustChanged) {
+    displayVariables[activeVariableBig].valChanged = true;
+  } 
+    
+  print_variable_big(activeVariableBig, 20, 20, 2, WHITE);
+
+  if(indicatorsJustChanged && button_up.wasReleased())
+    indicatorsJustChanged = false;
+  
+
+ 
+}
+
+void calculate_voltage() {
+  int Vin = (analogRead(BATT_PIN) * 5)/1024;
+  int prevVolts = displayVariables[V_VOLTS].intVal;
+  displayVariables[V_VOLTS].intVal = (Vin * (BATT_R1 + BATT_R2)) / BATT_R2;
+
+  if(abs(displayVariables[V_VOLTS].intVal - prevVolts) != 0)
+    displayVariables[V_VOLTS].valChanged = true;
 }
 
 // Performs actions requested by user via menu
@@ -426,10 +443,9 @@ void menu_buttons() {
   if (button_set.pressedFor(LONG_PRESS) && menu_just_opened == false) {
     menu_active = !menu_active;
     
-    if(menu_active) {
-      menu_changed = true;
-    }
-    
+    menu_changed = true;
+    menu_changed_small = false;
+
     Serial.print("Menu: ");
     Serial.println(menu_active);
 
@@ -731,6 +747,89 @@ void menu_init() {
 
 }
 
+void variables_init() {
+  displayVariables[V_SPEED].type = FLOAT;
+  displayVariables[V_SPEED].floatVal = 75;
+  displayVariables[V_SPEED].displaySuffix = "km/h";
+  displayVariables[V_SPEED].displaySymbol = "VEL";
+  displayVariables[V_SPEED].decPoints = 1;
+  displayVariables[V_SPEED].valChanged = true;
+  displayVariables[V_SPEED].symOffset = 0;
+
+  displayVariables[V_SPEED_AVG].type = FLOAT;
+  displayVariables[V_SPEED_AVG].floatVal = 5;
+  displayVariables[V_SPEED_AVG].displaySuffix = "km/h";
+  displayVariables[V_SPEED_AVG].displaySymbol = "AVG";
+  displayVariables[V_SPEED_AVG].decPoints = 1;
+  displayVariables[V_SPEED_AVG].valChanged = true;
+  displayVariables[V_SPEED_AVG].symOffset = 20;
+
+  displayVariables[V_RPM].type = INT;
+  displayVariables[V_RPM].intVal = 5000;
+  displayVariables[V_RPM].displaySymbol = "RPM";
+  displayVariables[V_RPM].valChanged = true;
+  displayVariables[V_RPM].symOffset = 40;
+
+  displayVariables[V_VOLTS].type = INT;
+  displayVariables[V_VOLTS].intVal = 0;
+  displayVariables[V_VOLTS].displaySymbol = "BAT";
+  displayVariables[V_VOLTS].displaySuffix = "V";
+  displayVariables[V_VOLTS].valChanged = true;
+  displayVariables[V_VOLTS].symOffset = 60;
+}
+
+String string_variable(int var) {
+  if(displayVariables[var].type == INT)
+    return String(displayVariables[var].intVal);
+  if(displayVariables[var].type == FLOAT)
+    return String(displayVariables[var].floatVal,displayVariables[var].decPoints);
+  if(displayVariables[var].type == BOOL)
+    return String(displayVariables[var].boolVal);
+  else
+    return displayVariables[var].stringVal;
+}
+
+String formatted_variable(int var) {
+  String formatted;
+  
+  formatted = displayVariables[var].displayPrefix;
+  
+  formatted += string_variable(var);
+
+  formatted += displayVariables[var].displaySuffix;
+
+  return formatted;
+}
+
+void print_variable_big(int var, int x, int y, int t_size, uint16_t color) {
+
+  if(displayVariables[var].valChanged == true) {
+    
+    String variableValue = formatted_variable(var);
+  
+    int symOffsetX = 0+displayVariables[var].symOffset;
+    int symOffsetY = -10;
+    int width = (variableValue.length() * (5 * t_size)) - symOffsetX;
+    int height = (7 * t_size) - symOffsetY;
+  
+    tft.fillRect(x+symOffsetX,y+symOffsetY,width,height,BLACK);
+  
+    tft.setCursor(x,y);
+    tft.setTextColor(color);
+    tft.setTextSize(t_size);
+  
+    tft.print(variableValue);
+    
+    tft.setTextSize(1);
+    tft.setCursor(x+symOffsetX,y+symOffsetY);
+    
+    tft.print(displayVariables[var].displaySymbol);
+
+    displayVariables[var].valChanged = false;
+  }
+  
+}
+
 void clear_eeprom() {
   for (int i = 0 ; i < EEPROM.length() ; i++) {
     EEPROM.write(i, 0);
@@ -879,5 +978,88 @@ uint32_t read32(File f) {
   ((uint8_t *)&result)[2] = f.read();
   ((uint8_t *)&result)[3] = f.read(); // MSB
   return result;
+}
+
+void analog_update() {
+  analog1 = analogRead(ANALOG1);
+  analog2 = analogRead(ANALOG2);
+  analog3 = analogRead(ANALOG3);
+  analog4 = analogRead(ANALOG4);
+  analog5 = analogRead(ANALOG5);
+  analog6 = analogRead(ANALOG6);
+}
+
+void log_to_sd() {
+  if(menuArray[SD_LOGGING].curState == 1) {  
+    
+    String dataString = "";
+  
+    //log system time
+    dataString += String(millis()); 
+    dataString += "\t";
+
+    for(int i = 0; i < NUM_VARIABLES; i++) {
+      dataString += string_variable(i);
+      dataString += "\t";
+    }
+  
+    //log analog values
+    dataString += String(analog1);
+    dataString += "\t";
+    dataString += String(analog2);
+    dataString += "\t";
+    dataString += String(analog3);
+    dataString += "\t";
+    dataString += String(analog4);
+    dataString += "\t";
+    dataString += String(analog5);
+    dataString += "\t";
+    dataString += String(analog6);
+    dataString += "\t";
+  
+    //log GPS data
+    dataString += String(gps.date.isValid());
+    dataString += "\t";
+  
+    char sz[32] = "**********";
+  
+    if(gps.date.isValid()) {
+      sprintf(sz, "%02d/%02d/%02d ", gps.date.month(), gps.date.day(), gps.date.year());
+    }
+    
+    
+    dataString += String(sz);
+    dataString += "\t";
+  
+    char st[32] = "********";
+      
+    if(gps.time.isValid()) {
+      sprintf(sz, "%02d:%02d:%02d ", gps.time.hour(), gps.time.minute(), gps.time.second());
+    }
+    
+    dataString += String(sz);
+    dataString += "\t";
+    dataString += String(gps.location.isValid());
+    dataString += "\t";
+    dataString += String(gps.location.lat());
+    dataString += "\t";
+    dataString += String(gps.location.lng());
+    dataString += "\t";
+  
+    dataFile = SD.open(fileName, O_CREAT | O_APPEND | O_WRITE);
+    
+    // if the file is available, write to it:
+    if (dataFile) {
+      dataFile.println(dataString);
+      dataFile.close();  
+      // print to the serial port too:
+      //Serial.println(dataString);
+    }
+    // if the file isn't open, pop up an error:
+    else {
+      Serial.println("error opening file for logging");
+      sd_new_logfile();
+    }
+  }
 }
 
