@@ -293,9 +293,9 @@ void loop(void) {
   }
 
   button_update();
+
+  // operate menu / status display
   menu_buttons();   
-
-
   if(menu_active) {
     menu_draw();
   } else {
@@ -305,29 +305,20 @@ void loop(void) {
   //nfc_update();
   update_actions();
 
+  // test changing variable (speed)
   randNumber = random(10);
 
   if(randNumber == 2) {
     displayVariables[V_SPEED].floatVal += (random(-500,500)/1000.0);
     displayVariables[V_SPEED].valChanged = true;
   }
-  
 
-}
-
-void sd_new_logfile() {
-  for (int n = 0; n < LIMIT; n++) {
-    sprintf(fileName, "TLOG%.3d.TXT", n);
-    if (SD.exists(fileName)) continue;
-    dataFile = SD.open(fileName, O_CREAT | O_WRITE);    
-    break;
-  }
 }
 
 void status_draw() {
-
-  bool blankScreen = false;
-
+  
+  bool blankScreen = false; //if true, screen will be erased (i.e. when switching from menu to status)
+  
   if (button_up.pressedFor(LONG_PRESS) && indicatorsJustChanged == false) {
     Serial.println("Changing big variable...");
     activeVariableBig++;
@@ -344,7 +335,6 @@ void status_draw() {
     indicatorsJustChanged = true;
   }
 
-
   if(blankScreen) {
     tft.fillScreen(BLACK);  
     print_variable_big(activeVariableBig, 20, 20, 2, WHITE);
@@ -357,12 +347,206 @@ void status_draw() {
   print_variable_big(activeVariableBig, 20, 20, 2, WHITE);
 
   if(indicatorsJustChanged && button_up.wasReleased())
-    indicatorsJustChanged = false;
-  
-
- 
+    indicatorsJustChanged = false; 
 }
 
+////////////////////////////////////////////////////////////////////
+//                        GENERAL FUNCTIONS                       //
+////////////////////////////////////////////////////////////////////
+
+//checks and tracks state of buttons, call frequently
+void button_update() {
+  button_up.read();
+  button_sel.read();
+  button_set.read();
+}
+
+//maintains consistent loop timing, assuming LOOP_DELAY is large enough
+void loop_timing()
+{
+  while(micros() - last_loop_micros < LOOP_DELAY - 10)
+  {
+    delayMicroseconds(20); // This loop timing is inaccurate and does not take processing time into account. A better timing function is required.
+  }
+  //unsigned long temp_last_micros = last_loop_micros;
+  last_loop_micros = micros();
+  //Serial.println(last_loop_micros-temp_last_micros);
+}
+
+//Used to print "GPS...     " etc consistently when initialising
+//called by initialisation functions upon startup
+void beginTestPrint(char *moduleName) {
+  tft.print(moduleName);
+  tft.print("...");
+  for(int i = 0; i < 14-strlen(moduleName); i++)
+    tft.print(" ");
+}
+
+//Used to print "pass" or "fail" etc consistently when initialising
+//called by initialisation functions after success / failure
+void completeTestPrint(bool pass) {
+  if(!pass) {
+    tft.setTextColor(RED);
+    tft.print("FAIL");
+  } else {
+    tft.setTextColor(GREEN);
+    tft.print("pass");
+  }
+  tft.setTextColor(WHITE);
+}
+
+////////////////////////////////////////////////////////////////////
+//                           OLED DISPLAY                         //
+////////////////////////////////////////////////////////////////////
+
+bool display_init() {
+  tft.begin();
+  //tft.setRotation(1);
+  tft.fillScreen(BLACK);
+  //tft.setTextColor(WHITE);
+  //tft.print("Display...    ");
+  //tft.setTextColor(GREEN);
+  //tft.println("pass"); 
+  tft.setTextColor(WHITE);
+  return true;
+}
+
+void displayTest() {
+  for(int i = 0; i < 100; i++) {
+    displayPrint("Test ",WHITE);
+    tft.println(i);
+    
+    delay(500);
+  }
+}
+
+//deprecated I think, just use tft.print(etc) - much more flexible and built in.
+void displayPrint(char *text, uint16_t color) {
+  if(tft.getCursorY()>tft.height()-10) {
+    tft.fillScreen(BLACK);
+    tft.setCursor(0,0);
+  }
+  tft.setTextColor(color);
+  tft.print(text);
+  Serial.print(text);
+}
+
+////////////////////////////////////////////////////////////////////
+//                   VARIABLE DISPLAY FORMATTING                  //
+////////////////////////////////////////////////////////////////////
+
+//configure different variables for display. These variables are also logged automatically.
+//To add new variables, add variable ENUM to the ENUM list before setup. Increase variable count define.
+//Add variable details below.
+void variables_init() {
+  displayVariables[V_SPEED].type = FLOAT;
+  displayVariables[V_SPEED].floatVal = 75;
+  displayVariables[V_SPEED].displaySuffix = "km/h";
+  displayVariables[V_SPEED].displaySymbol = "VEL";
+  displayVariables[V_SPEED].decPoints = 1;
+  displayVariables[V_SPEED].valChanged = true;
+  displayVariables[V_SPEED].symOffset = 0;
+
+  displayVariables[V_SPEED_AVG].type = FLOAT;
+  displayVariables[V_SPEED_AVG].floatVal = 5;
+  displayVariables[V_SPEED_AVG].displaySuffix = "km/h";
+  displayVariables[V_SPEED_AVG].displaySymbol = "AVG";
+  displayVariables[V_SPEED_AVG].decPoints = 1;
+  displayVariables[V_SPEED_AVG].valChanged = true;
+  displayVariables[V_SPEED_AVG].symOffset = 20;
+
+  displayVariables[V_RPM].type = INT;
+  displayVariables[V_RPM].intVal = 5000;
+  displayVariables[V_RPM].displaySymbol = "RPM";
+  displayVariables[V_RPM].valChanged = true;
+  displayVariables[V_RPM].symOffset = 40;
+
+  displayVariables[V_VOLTS].type = INT;
+  displayVariables[V_VOLTS].intVal = 0;
+  displayVariables[V_VOLTS].displaySymbol = "BAT";
+  displayVariables[V_VOLTS].displaySuffix = "V";
+  displayVariables[V_VOLTS].valChanged = true;
+  displayVariables[V_VOLTS].symOffset = 60;
+}
+
+//prints a given variable at a chosen size, selectable coordinates, colour etc.
+// draws the 'symbol' ('VEL', 'REV', 'TEMP' etc above value at location set on variable creation.
+// only draws on variable change - to force, set displayVariables[var].valChanged = true;
+void print_variable_big(int var, int x, int y, int t_size, uint16_t color) {
+
+  if(displayVariables[var].valChanged == true) {
+    
+    String variableValue = formatted_variable(var);
+  
+    int symOffsetX = 0+displayVariables[var].symOffset;
+    int symOffsetY = -10;
+    int width = (variableValue.length() * (5 * t_size)) - symOffsetX;
+    int height = (7 * t_size) - symOffsetY;
+  
+    tft.fillRect(x+symOffsetX,y+symOffsetY,width,height,BLACK);
+  
+    tft.setCursor(x,y);
+    tft.setTextColor(color);
+    tft.setTextSize(t_size);
+  
+    tft.print(variableValue);
+    
+    tft.setTextSize(1);
+    tft.setCursor(x+symOffsetX,y+symOffsetY);
+    
+    tft.print(displayVariables[var].displaySymbol);
+
+    displayVariables[var].valChanged = false;
+  }
+}
+
+//returns a formatted string containing a given variable, 
+//including any prefix and suffix (i.e. 'km/h', 'W', 'A', 'V', '/s')
+String formatted_variable(int var) {
+  String formatted;
+  
+  formatted = displayVariables[var].displayPrefix;
+  
+  formatted += string_variable(var);
+
+  formatted += displayVariables[var].displaySuffix;
+
+  return formatted;
+}
+
+//I'm retarded, there's a better way to do this I'm sure. Mental block, I swear.
+//Variables can be int, float, boolean or string - we want one interface regardless.
+//function takes in variable index and returns string containing variable, with no 
+//knowledge of variable type required as input.
+//These strings are used to build the text displayed to the user, and this value 
+//is also directly used when logging to the SD card.
+String string_variable(int var) {
+  if(displayVariables[var].type == INT)
+    return String(displayVariables[var].intVal);
+  if(displayVariables[var].type == FLOAT)
+    return String(displayVariables[var].floatVal,displayVariables[var].decPoints);
+  if(displayVariables[var].type == BOOL)
+    return String(displayVariables[var].boolVal);
+  else
+    return displayVariables[var].stringVal;
+}
+
+
+////////////////////////////////////////////////////////////////////
+//                         MISC INPUTS                            //
+////////////////////////////////////////////////////////////////////
+
+//reads the analog inputs designed for potentiometers (or similar), spaced separately on the board.
+void analog_update() {
+  analog1 = analogRead(ANALOG1);
+  analog2 = analogRead(ANALOG2);
+  analog3 = analogRead(ANALOG3);
+  analog4 = analogRead(ANALOG4);
+  analog5 = analogRead(ANALOG5);
+  analog6 = analogRead(ANALOG6);
+}
+
+//reads the analog value and calculates the voltage of the battery / power source.
 void calculate_voltage() {
   int Vin = (analogRead(BATT_PIN) * 5)/1024;
   int prevVolts = displayVariables[V_VOLTS].intVal;
@@ -372,71 +556,223 @@ void calculate_voltage() {
     displayVariables[V_VOLTS].valChanged = true;
 }
 
-// Performs actions requested by user via menu
-void update_actions() {
-    if(menuArray[INVERT_DISPLAY].curState == 1)
-      tft.invert(true);
-    else
-      tft.invert(false);
+////////////////////////////////////////////////////////////////////
+//                             GPS                                //
+////////////////////////////////////////////////////////////////////
 
-    //clear EEPROM if instructed via menu. Wait until menu has updated to show status symbol.
-    if(menuArray[CLEAR_EEPROM].curState == 1 && menu_changed == false) {
-      clear_eeprom();
-      menuArray[CLEAR_EEPROM].curState = 0;
-      menu_changed = true;
-      menu_changed_small = true;
-  }
-
-  if(menuArray[NEW_LOGFILE].curState == 1 && menu_changed == false) {
-      if (dataFile) {
-        dataFile.close();  
-      }
-
-      sd_new_logfile();
-      
-      menuArray[NEW_LOGFILE].curState = 0;
-      menu_changed = true;
-      menu_changed_small = true;
-  }
-
-
+bool gps_init() {
+  #if ENABLED(GPS)
+    beginTestPrint("GPS");
+    Serial1.begin(GPSBaud);
+    
+    unsigned long gps_starttime = millis();
+    
+    while(millis() - gps_starttime < 2000) {
+      while (Serial1.available() > 0)
+        gps.encode(Serial1.read());
+    }
+    
+    if(gps.charsProcessed() < 10) {
+        completeTestPrint(false);
+      return false;
+    } else {
+        completeTestPrint(true);
+      return true;
+    }
+  #else
+    return true;
+  #endif
 }
 
-void menu_draw() {
-  if(menu_changed) {
+void gps_update() {
+  #if ENABLED(GPS)
+    while (Serial1.available() > 0)
+      gps.encode(Serial1.read());
+  #endif
+}
 
-    //if only part of the menu has changed, only redraw that part
-    if(menu_changed_small) {
-      if(menu_selected_index > 0)
-        tft.fillRect(0,(menu_selected_index-1)*MENU_OPTION_HEIGHT,128,MENU_OPTION_HEIGHT*2,BLACK);
-      else {
-        tft.fillRect(0,menu_selected_index*MENU_OPTION_HEIGHT,128,MENU_OPTION_HEIGHT,BLACK);
-        tft.fillRect(0,(MENU_OPTIONS-1)*MENU_OPTION_HEIGHT,128,MENU_OPTION_HEIGHT,BLACK);
-      }
-    } else {
-      tft.fillScreen(BLACK);
+//old test function, probably not relevant now but maybe useful reference
+void gps_print() {
+  #if ENABLED(GPS)
+    //int16_t oldCursorX = tft.getCursorX;
+    //int16_t oldCursorY = tft.getCursorY;
+    
+    int bar_y = 110;
+    
+    tft.fillRect(0, bar_y , tft.width(), tft.height()-bar_y, BLACK);
+    
+    tft.setCursor(0,bar_y);
+    
+    tft.print(gps.time.hour());
+    tft.print(":");
+    tft.print(gps.time.minute());
+    tft.print(":");
+    tft.print(gps.time.second());
+    
+    //tft.setCursor(oldCursorX,oldCursorY);
+  #endif
+}
+
+////////////////////////////////////////////////////////////////////
+//                             NFC                                //
+////////////////////////////////////////////////////////////////////
+
+bool nfc_init() {
+  #if ENABLED(NFC)
+    beginTestPrint("NFC");
+    nfc.begin();
+     
+    uint32_t versiondata = nfc.getFirmwareVersion();
+    if (! versiondata) {
+      completeTestPrint(false); 
+      return false;
     }
-    for(int i = 0; i < MENU_OPTIONS; i++) {
-      int temp_y = i*MENU_OPTION_HEIGHT;
-      if(menu_selected_index == i) {
-        tft.fillRect(0, temp_y , 128, MENU_OPTION_HEIGHT, WHITE);
-        tft.setTextColor(BLACK);
-        tft.fillTriangle(5, i*MENU_OPTION_HEIGHT+2, 5, (i+1)*MENU_OPTION_HEIGHT-2, 12, (i+0.5)*MENU_OPTION_HEIGHT, RED);
-      }
-      else {
-        tft.setTextColor(WHITE);
-      }
-      tft.setCursor(15,i*MENU_OPTION_HEIGHT);
-      tft.print(menuArray[i].optionName);
-      tft.setCursor(100,i*MENU_OPTION_HEIGHT);
-
-      tft.print(menuArray[i].stateText[menuArray[i].curState]);
+    
+    // Got ok data, print it out!
+    completeTestPrint(true); 
+    
+    #ifdef VERBOSE_DISPLAY
+    
+    tft.print("Found chip PN5"); tft.println((versiondata>>24) & 0xFF, HEX); 
+    tft.print("Firmware ver. "); tft.print((versiondata>>16) & 0xFF, DEC); 
+    tft.print('.'); tft.println((versiondata>>8) & 0xFF, DEC);
+    
+    #endif
+    
+    // Set the max number of retry attempts to read from a card
+    // This prevents us from waiting forever for a card, which is
+    // the default behaviour of the PN532.
+    nfc.setPassiveActivationRetries(0xFF);
+    
+    // configure board to read RFID tags
+    nfc.SAMConfig();
+  #endif
   
+  return true;
+}
+
+//checks for and reads NFC tag. Very slow, must be used sparingly.
+void nfc_update() {
+  #if ENABLED(NFC)
+    
+    boolean success;
+    uint8_t uid[] = { 0, 0, 0, 0, 0, 0, 0 };  // Buffer to store the returned UID
+    uint8_t uidLength;                        // Length of the UID (4 or 7 bytes depending on ISO14443A card type)
+    
+    // Wait for an ISO14443A type cards (Mifare, etc.).  When one is found
+    // 'uid' will be populated with the UID, and uidLength will indicate
+    // if the uid is 4 bytes (Mifare Classic) or 7 bytes (Mifare Ultralight)
+    success = nfc.readPassiveTargetID(PN532_MIFARE_ISO14443A, &uid[0], &uidLength);
+    
+    if (success) {
+      tft.println("Found a card!");
+      tft.print("UID Length: ");
+      
+      tft.print(uidLength, DEC);
+      tft.print(" bytes");
+  
+      tft.print("UID Value: ");
+      for (uint8_t i=0; i < uidLength; i++) 
+      {
+        tft.print(" 0x");
+        tft.print(uid[i], HEX);
+      }
+      tft.println("");
+      // Wait 1 second before continuing
+      delay(1000);
+    }
+    else
+    {
+      // PN532 probably timed out waiting for a card
+      //displayPrintln("Timed out waiting for a card", WHITE);
     }
 
-    menu_changed = false;
-    menu_changed_small = false;
+  #endif
+  
+}
+
+////////////////////////////////////////////////////////////////////
+//                           EEPROM                               //
+////////////////////////////////////////////////////////////////////
+
+void clear_eeprom() {
+  for (int i = 0 ; i < EEPROM.length() ; i++) {
+    EEPROM.write(i, 0);
   }
+  Serial.println("EEPROM Cleared!");
+}
+
+bool eeprom_init() {
+  #if ENABLED(EEPROM_ENABLED)
+    beginTestPrint("EEPROM");
+
+    int eeAddress = eeprom_options_start_addr;
+    int tempVar;
+    Serial.println("Initialising EEPROM...");
+
+    for(int i = 0; i < MENU_OPTIONS; i++) {
+      EEPROM.get(eeAddress + i, tempVar);
+
+      Serial.print(menuArray[i].optionName);
+      Serial.print(": ");
+
+      if (tempVar >= 0 && tempVar < menuArray[i].numStates) {
+        menuArray[i].curState = tempVar;
+        Serial.println(menuArray[i].stateText[tempVar]);  
+      } else {
+        Serial.println("Error - invalid value!");
+      }
+      
+      delay(200);
+    }
+  
+    completeTestPrint(true);
+  #endif
+  return true;  
+}
+
+////////////////////////////////////////////////////////////////////
+//                         MENU SCREEN                            //
+////////////////////////////////////////////////////////////////////
+
+void menu_init() {  
+  menuArray[GPS_ONOFF].optionName = "GPS Tracking";
+  menuArray[GPS_ONOFF].numStates = 2;
+  menuArray[GPS_ONOFF].curState = 0;
+  menuArray[GPS_ONOFF].stateText[0] = "Off";
+  menuArray[GPS_ONOFF].stateText[1] = "On";
+
+  menuArray[LED_BRIGHTNESS].optionName = "LED Brightness";
+  menuArray[LED_BRIGHTNESS].numStates = 4;
+  menuArray[LED_BRIGHTNESS].curState = 0;
+  menuArray[LED_BRIGHTNESS].stateText[0] = "Off";
+  menuArray[LED_BRIGHTNESS].stateText[1] = "Low";
+  menuArray[LED_BRIGHTNESS].stateText[2] = "Med";
+  menuArray[LED_BRIGHTNESS].stateText[3] = "Hi";
+
+  menuArray[SD_LOGGING].optionName = "Log to SD";
+  menuArray[SD_LOGGING].numStates = 2;
+  menuArray[SD_LOGGING].curState = 0;
+  menuArray[SD_LOGGING].stateText[0] = "Off";
+  menuArray[SD_LOGGING].stateText[1] = "On";
+
+  menuArray[INVERT_DISPLAY].optionName = "Invert Display";
+  menuArray[INVERT_DISPLAY].numStates = 2;
+  menuArray[INVERT_DISPLAY].curState = 0;
+  menuArray[INVERT_DISPLAY].stateText[0] = "Off";
+  menuArray[INVERT_DISPLAY].stateText[1] = "On";
+
+  menuArray[CLEAR_EEPROM].optionName = "Clear EEPROM";
+  menuArray[CLEAR_EEPROM].numStates = 2;
+  menuArray[CLEAR_EEPROM].curState = 0;
+  menuArray[CLEAR_EEPROM].stateText[0] = "";
+  menuArray[CLEAR_EEPROM].stateText[1] = "...";
+
+  menuArray[NEW_LOGFILE].optionName = "New Logfile";
+  menuArray[NEW_LOGFILE].numStates = 2;
+  menuArray[NEW_LOGFILE].curState = 0;
+  menuArray[NEW_LOGFILE].stateText[0] = "";
+  menuArray[NEW_LOGFILE].stateText[1] = "...";
 }
 
 void menu_buttons() {
@@ -481,363 +817,158 @@ void menu_buttons() {
   }
 }
 
-void displayPrint(char *text, uint16_t color) {
-  if(tft.getCursorY()>tft.height()-10) {
-    tft.fillScreen(BLACK);
-    tft.setCursor(0,0);
-  }
-  tft.setTextColor(color);
-  tft.print(text);
-  Serial.print(text);
-}
+void menu_draw() {
+  if(menu_changed) {
 
-void displayTest() {
-  for(int i = 0; i < 100; i++) {
-    displayPrint("Test ",WHITE);
-    tft.println(i);
-    
-    delay(500);
-  }
-}
-
-void beginTestPrint(char *moduleName) {
-  tft.print(moduleName);
-  tft.print("...");
-  for(int i = 0; i < 14-strlen(moduleName); i++)
-    tft.print(" ");
-}
-
-void completeTestPrint(bool pass) {
-  if(!pass) {
-    tft.setTextColor(RED);
-    tft.print("FAIL");
-  } else {
-    tft.setTextColor(GREEN);
-    tft.print("pass");
-  }
-  tft.setTextColor(WHITE);
-}
-
-bool display_init() {
-  tft.begin();
-  //tft.setRotation(1);
-  tft.fillScreen(BLACK);
-  //tft.setTextColor(WHITE);
-  //tft.print("Display...    ");
-  //tft.setTextColor(GREEN);
-  //tft.println("pass"); 
-  tft.setTextColor(WHITE);
-  return true;
-}
-
-bool nfc_init() {
-  #if ENABLED(NFC)
-    beginTestPrint("NFC");
-    nfc.begin();
-     
-    uint32_t versiondata = nfc.getFirmwareVersion();
-    if (! versiondata) {
-      completeTestPrint(false); 
-      return false;
-    }
-    
-    // Got ok data, print it out!
-    completeTestPrint(true); 
-    
-    #ifdef VERBOSE_DISPLAY
-    
-    tft.print("Found chip PN5"); tft.println((versiondata>>24) & 0xFF, HEX); 
-    tft.print("Firmware ver. "); tft.print((versiondata>>16) & 0xFF, DEC); 
-    tft.print('.'); tft.println((versiondata>>8) & 0xFF, DEC);
-    
-    #endif
-    
-    // Set the max number of retry attempts to read from a card
-    // This prevents us from waiting forever for a card, which is
-    // the default behaviour of the PN532.
-    nfc.setPassiveActivationRetries(0xFF);
-    
-    // configure board to read RFID tags
-    nfc.SAMConfig();
-  #endif
-  
-  return true;
-
-}
-
-void nfc_update() {
-  #if ENABLED(NFC)
-    
-    boolean success;
-    uint8_t uid[] = { 0, 0, 0, 0, 0, 0, 0 };  // Buffer to store the returned UID
-    uint8_t uidLength;                        // Length of the UID (4 or 7 bytes depending on ISO14443A card type)
-    
-    // Wait for an ISO14443A type cards (Mifare, etc.).  When one is found
-    // 'uid' will be populated with the UID, and uidLength will indicate
-    // if the uid is 4 bytes (Mifare Classic) or 7 bytes (Mifare Ultralight)
-    success = nfc.readPassiveTargetID(PN532_MIFARE_ISO14443A, &uid[0], &uidLength);
-    
-    if (success) {
-      tft.println("Found a card!");
-      tft.print("UID Length: ");
-      
-      tft.print(uidLength, DEC);
-      tft.print(" bytes");
-  
-      tft.print("UID Value: ");
-      for (uint8_t i=0; i < uidLength; i++) 
-      {
-        tft.print(" 0x");
-        tft.print(uid[i], HEX);
+    //if only part of the menu has changed, only redraw that part
+    if(menu_changed_small) {
+      if(menu_selected_index > 0)
+        tft.fillRect(0,(menu_selected_index-1)*MENU_OPTION_HEIGHT,128,MENU_OPTION_HEIGHT*2,BLACK);
+      else {
+        tft.fillRect(0,menu_selected_index*MENU_OPTION_HEIGHT,128,MENU_OPTION_HEIGHT,BLACK);
+        tft.fillRect(0,(MENU_OPTIONS-1)*MENU_OPTION_HEIGHT,128,MENU_OPTION_HEIGHT,BLACK);
       }
-      tft.println("");
-      // Wait 1 second before continuing
-      delay(1000);
-    }
-    else
-    {
-      // PN532 probably timed out waiting for a card
-      //displayPrintln("Timed out waiting for a card", WHITE);
-    }
-
-  #endif
-  
-}
-
-bool gps_init() {
-  #if ENABLED(GPS)
-    beginTestPrint("GPS");
-    Serial1.begin(GPSBaud);
-    
-    unsigned long gps_starttime = millis();
-    
-    while(millis() - gps_starttime < 2000) {
-      while (Serial1.available() > 0)
-        gps.encode(Serial1.read());
-    }
-    
-    if(gps.charsProcessed() < 10) {
-        completeTestPrint(false);
-      return false;
     } else {
-        completeTestPrint(true);
-      return true;
+      tft.fillScreen(BLACK);
     }
-  #else
-    return true;
-  #endif
-}
-
-void gps_update() {
-  #if ENABLED(GPS)
-    while (Serial1.available() > 0)
-      gps.encode(Serial1.read());
-  #endif
-}
-
-void gps_print() {
-  #if ENABLED(GPS)
-    //int16_t oldCursorX = tft.getCursorX;
-    //int16_t oldCursorY = tft.getCursorY;
-    
-    int bar_y = 110;
-    
-    tft.fillRect(0, bar_y , tft.width(), tft.height()-bar_y, BLACK);
-    
-    tft.setCursor(0,bar_y);
-    
-    tft.print(gps.time.hour());
-    tft.print(":");
-    tft.print(gps.time.minute());
-    tft.print(":");
-    tft.print(gps.time.second());
-    
-    //tft.setCursor(oldCursorX,oldCursorY);
-  #endif
-
-}
-
-
-void button_update() {
-  button_up.read();
-  button_sel.read();
-  button_set.read();
-}
-
-void loop_timing()
-{
-  while(micros() - last_loop_micros < LOOP_DELAY - 10)
-  {
-    delayMicroseconds(20); // This loop timing is inaccurate and does not take processing time into account. A better timing function is required.
-  }
-  //unsigned long temp_last_micros = last_loop_micros;
-  last_loop_micros = micros();
-  //Serial.println(last_loop_micros-temp_last_micros);
-}
-
-bool eeprom_init() {
-  #if ENABLED(EEPROM_ENABLED)
-    beginTestPrint("EEPROM");
-
-    int eeAddress = eeprom_options_start_addr;
-    int tempVar;
-    Serial.println("Initialising EEPROM...");
-
     for(int i = 0; i < MENU_OPTIONS; i++) {
-      EEPROM.get(eeAddress + i, tempVar);
+      int temp_y = i*MENU_OPTION_HEIGHT;
+      if(menu_selected_index == i) {
+        tft.fillRect(0, temp_y , 128, MENU_OPTION_HEIGHT, WHITE);
+        tft.setTextColor(BLACK);
+        tft.fillTriangle(5, i*MENU_OPTION_HEIGHT+2, 5, (i+1)*MENU_OPTION_HEIGHT-2, 12, (i+0.5)*MENU_OPTION_HEIGHT, RED);
+      }
+      else {
+        tft.setTextColor(WHITE);
+      }
+      tft.setCursor(15,i*MENU_OPTION_HEIGHT);
+      tft.print(menuArray[i].optionName);
+      tft.setCursor(100,i*MENU_OPTION_HEIGHT);
 
-      Serial.print(menuArray[i].optionName);
-      Serial.print(": ");
+      tft.print(menuArray[i].stateText[menuArray[i].curState]);
+  
+    }
 
-      if (tempVar >= 0 && tempVar < menuArray[i].numStates) {
-        menuArray[i].curState = tempVar;
-        Serial.println(menuArray[i].stateText[tempVar]);  
-      } else {
-        Serial.println("Error - invalid value!");
+    menu_changed = false;
+    menu_changed_small = false;
+  }
+}
+
+// Performs actions requested by user via menu
+void update_actions() {
+    if(menuArray[INVERT_DISPLAY].curState == 1)
+      tft.invert(true);
+    else
+      tft.invert(false);
+
+    //clear EEPROM if instructed via menu. Wait until menu has updated to show status symbol.
+    if(menuArray[CLEAR_EEPROM].curState == 1 && menu_changed == false) {
+      clear_eeprom();
+      menuArray[CLEAR_EEPROM].curState = 0;
+      menu_changed = true;
+      menu_changed_small = true;
+  }
+
+  if(menuArray[NEW_LOGFILE].curState == 1 && menu_changed == false) {
+      if (dataFile) {
+        dataFile.close();  
       }
 
+      sd_new_logfile();
 
-      delay(200);
+      //reset menu button to default state
+      menuArray[NEW_LOGFILE].curState = 0;
+      menu_changed = true;
+      menu_changed_small = true;
+  }
+}
+
+////////////////////////////////////////////////////////////////////
+//                      SD CARD and LOGGING                       //
+////////////////////////////////////////////////////////////////////
+
+void log_to_sd() {
+  if(menuArray[SD_LOGGING].curState == 1) {  
+    
+    String dataString = "";
+  
+    //log system time
+    dataString += String(millis()); 
+    dataString += "\t";
+
+    for(int i = 0; i < NUM_VARIABLES; i++) {
+      dataString += string_variable(i);
+      dataString += "\t";
     }
   
-    completeTestPrint(true);
-  #endif
+    //log analog values
+    dataString += String(analog1);
+    dataString += "\t";
+    dataString += String(analog2);
+    dataString += "\t";
+    dataString += String(analog3);
+    dataString += "\t";
+    dataString += String(analog4);
+    dataString += "\t";
+    dataString += String(analog5);
+    dataString += "\t";
+    dataString += String(analog6);
+    dataString += "\t";
   
-  return true;
+    //log GPS data
+    dataString += String(gps.date.isValid());
+    dataString += "\t";
   
-}
-
-void menu_init() {  
-  menuArray[GPS_ONOFF].optionName = "GPS Tracking";
-  menuArray[GPS_ONOFF].numStates = 2;
-  menuArray[GPS_ONOFF].curState = 0;
-  menuArray[GPS_ONOFF].stateText[0] = "Off";
-  menuArray[GPS_ONOFF].stateText[1] = "On";
-
-  menuArray[LED_BRIGHTNESS].optionName = "LED Brightness";
-  menuArray[LED_BRIGHTNESS].numStates = 4;
-  menuArray[LED_BRIGHTNESS].curState = 0;
-  menuArray[LED_BRIGHTNESS].stateText[0] = "Off";
-  menuArray[LED_BRIGHTNESS].stateText[1] = "Low";
-  menuArray[LED_BRIGHTNESS].stateText[2] = "Med";
-  menuArray[LED_BRIGHTNESS].stateText[3] = "Hi";
-
-  menuArray[SD_LOGGING].optionName = "Log to SD";
-  menuArray[SD_LOGGING].numStates = 2;
-  menuArray[SD_LOGGING].curState = 0;
-  menuArray[SD_LOGGING].stateText[0] = "Off";
-  menuArray[SD_LOGGING].stateText[1] = "On";
-
-  menuArray[INVERT_DISPLAY].optionName = "Invert Display";
-  menuArray[INVERT_DISPLAY].numStates = 2;
-  menuArray[INVERT_DISPLAY].curState = 0;
-  menuArray[INVERT_DISPLAY].stateText[0] = "Off";
-  menuArray[INVERT_DISPLAY].stateText[1] = "On";
-
-  menuArray[CLEAR_EEPROM].optionName = "Clear EEPROM";
-  menuArray[CLEAR_EEPROM].numStates = 2;
-  menuArray[CLEAR_EEPROM].curState = 0;
-  menuArray[CLEAR_EEPROM].stateText[0] = "";
-  menuArray[CLEAR_EEPROM].stateText[1] = "...";
-
-  menuArray[NEW_LOGFILE].optionName = "New Logfile";
-  menuArray[NEW_LOGFILE].numStates = 2;
-  menuArray[NEW_LOGFILE].curState = 0;
-  menuArray[NEW_LOGFILE].stateText[0] = "";
-  menuArray[NEW_LOGFILE].stateText[1] = "...";
-
-}
-
-void variables_init() {
-  displayVariables[V_SPEED].type = FLOAT;
-  displayVariables[V_SPEED].floatVal = 75;
-  displayVariables[V_SPEED].displaySuffix = "km/h";
-  displayVariables[V_SPEED].displaySymbol = "VEL";
-  displayVariables[V_SPEED].decPoints = 1;
-  displayVariables[V_SPEED].valChanged = true;
-  displayVariables[V_SPEED].symOffset = 0;
-
-  displayVariables[V_SPEED_AVG].type = FLOAT;
-  displayVariables[V_SPEED_AVG].floatVal = 5;
-  displayVariables[V_SPEED_AVG].displaySuffix = "km/h";
-  displayVariables[V_SPEED_AVG].displaySymbol = "AVG";
-  displayVariables[V_SPEED_AVG].decPoints = 1;
-  displayVariables[V_SPEED_AVG].valChanged = true;
-  displayVariables[V_SPEED_AVG].symOffset = 20;
-
-  displayVariables[V_RPM].type = INT;
-  displayVariables[V_RPM].intVal = 5000;
-  displayVariables[V_RPM].displaySymbol = "RPM";
-  displayVariables[V_RPM].valChanged = true;
-  displayVariables[V_RPM].symOffset = 40;
-
-  displayVariables[V_VOLTS].type = INT;
-  displayVariables[V_VOLTS].intVal = 0;
-  displayVariables[V_VOLTS].displaySymbol = "BAT";
-  displayVariables[V_VOLTS].displaySuffix = "V";
-  displayVariables[V_VOLTS].valChanged = true;
-  displayVariables[V_VOLTS].symOffset = 60;
-}
-
-String string_variable(int var) {
-  if(displayVariables[var].type == INT)
-    return String(displayVariables[var].intVal);
-  if(displayVariables[var].type == FLOAT)
-    return String(displayVariables[var].floatVal,displayVariables[var].decPoints);
-  if(displayVariables[var].type == BOOL)
-    return String(displayVariables[var].boolVal);
-  else
-    return displayVariables[var].stringVal;
-}
-
-String formatted_variable(int var) {
-  String formatted;
+    char sz[32] = "**********";
   
-  formatted = displayVariables[var].displayPrefix;
-  
-  formatted += string_variable(var);
-
-  formatted += displayVariables[var].displaySuffix;
-
-  return formatted;
-}
-
-void print_variable_big(int var, int x, int y, int t_size, uint16_t color) {
-
-  if(displayVariables[var].valChanged == true) {
+    if(gps.date.isValid()) {
+      sprintf(sz, "%02d/%02d/%02d ", gps.date.month(), gps.date.day(), gps.date.year());
+    }
     
-    String variableValue = formatted_variable(var);
-  
-    int symOffsetX = 0+displayVariables[var].symOffset;
-    int symOffsetY = -10;
-    int width = (variableValue.length() * (5 * t_size)) - symOffsetX;
-    int height = (7 * t_size) - symOffsetY;
-  
-    tft.fillRect(x+symOffsetX,y+symOffsetY,width,height,BLACK);
-  
-    tft.setCursor(x,y);
-    tft.setTextColor(color);
-    tft.setTextSize(t_size);
-  
-    tft.print(variableValue);
     
-    tft.setTextSize(1);
-    tft.setCursor(x+symOffsetX,y+symOffsetY);
+    dataString += String(sz);
+    dataString += "\t";
+  
+    char st[32] = "********";
+      
+    if(gps.time.isValid()) {
+      sprintf(sz, "%02d:%02d:%02d ", gps.time.hour(), gps.time.minute(), gps.time.second());
+    }
     
-    tft.print(displayVariables[var].displaySymbol);
-
-    displayVariables[var].valChanged = false;
+    dataString += String(sz);
+    dataString += "\t";
+    dataString += String(gps.location.isValid());
+    dataString += "\t";
+    dataString += String(gps.location.lat());
+    dataString += "\t";
+    dataString += String(gps.location.lng());
+    dataString += "\t";
+  
+    dataFile = SD.open(fileName, O_CREAT | O_APPEND | O_WRITE);
+    
+    // if the file is available, write to it:
+    if (dataFile) {
+      dataFile.println(dataString);
+      dataFile.close();  
+      // print to the serial port too:
+      //Serial.println(dataString);
+    }
+    // if the file isn't open, pop up an error:
+    else {
+      Serial.println("error opening file for logging");
+      sd_new_logfile();
+    }
   }
-  
 }
 
-void clear_eeprom() {
-  for (int i = 0 ; i < EEPROM.length() ; i++) {
-    EEPROM.write(i, 0);
+void sd_new_logfile() {
+  for (int n = 0; n < LIMIT; n++) {
+    sprintf(fileName, "TLOG%.3d.TXT", n);
+    if (SD.exists(fileName)) continue;
+    dataFile = SD.open(fileName, O_CREAT | O_WRITE);    
+    break;
   }
-  Serial.println("EEPROM Cleared!");
 }
-
 
 // This function opens a Windows Bitmap (BMP) file and
 // displays it at the given coordinates.  It's sped up
@@ -979,88 +1110,5 @@ uint32_t read32(File f) {
   ((uint8_t *)&result)[2] = f.read();
   ((uint8_t *)&result)[3] = f.read(); // MSB
   return result;
-}
-
-void analog_update() {
-  analog1 = analogRead(ANALOG1);
-  analog2 = analogRead(ANALOG2);
-  analog3 = analogRead(ANALOG3);
-  analog4 = analogRead(ANALOG4);
-  analog5 = analogRead(ANALOG5);
-  analog6 = analogRead(ANALOG6);
-}
-
-void log_to_sd() {
-  if(menuArray[SD_LOGGING].curState == 1) {  
-    
-    String dataString = "";
-  
-    //log system time
-    dataString += String(millis()); 
-    dataString += "\t";
-
-    for(int i = 0; i < NUM_VARIABLES; i++) {
-      dataString += string_variable(i);
-      dataString += "\t";
-    }
-  
-    //log analog values
-    dataString += String(analog1);
-    dataString += "\t";
-    dataString += String(analog2);
-    dataString += "\t";
-    dataString += String(analog3);
-    dataString += "\t";
-    dataString += String(analog4);
-    dataString += "\t";
-    dataString += String(analog5);
-    dataString += "\t";
-    dataString += String(analog6);
-    dataString += "\t";
-  
-    //log GPS data
-    dataString += String(gps.date.isValid());
-    dataString += "\t";
-  
-    char sz[32] = "**********";
-  
-    if(gps.date.isValid()) {
-      sprintf(sz, "%02d/%02d/%02d ", gps.date.month(), gps.date.day(), gps.date.year());
-    }
-    
-    
-    dataString += String(sz);
-    dataString += "\t";
-  
-    char st[32] = "********";
-      
-    if(gps.time.isValid()) {
-      sprintf(sz, "%02d:%02d:%02d ", gps.time.hour(), gps.time.minute(), gps.time.second());
-    }
-    
-    dataString += String(sz);
-    dataString += "\t";
-    dataString += String(gps.location.isValid());
-    dataString += "\t";
-    dataString += String(gps.location.lat());
-    dataString += "\t";
-    dataString += String(gps.location.lng());
-    dataString += "\t";
-  
-    dataFile = SD.open(fileName, O_CREAT | O_APPEND | O_WRITE);
-    
-    // if the file is available, write to it:
-    if (dataFile) {
-      dataFile.println(dataString);
-      dataFile.close();  
-      // print to the serial port too:
-      //Serial.println(dataString);
-    }
-    // if the file isn't open, pop up an error:
-    else {
-      Serial.println("error opening file for logging");
-      sd_new_logfile();
-    }
-  }
 }
 
