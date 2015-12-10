@@ -18,6 +18,7 @@
 #define BUTTONS
 #define EEPROM_ENABLED
 #define ANALOG_INPUTS
+#define CANBUS
 
 
 #include <stdio.h>
@@ -132,6 +133,13 @@
   #define SAMPLE_FREQ 4 //every x'th loop sample and store values
 
   int analog1, analog2, analog3, analog4, analog5, analog6;
+#endif
+
+#if ENABLED(CANBUS) 
+  #include <Canbus.h>
+
+  int data;
+  char buffer[456];  //Data will be temporarily stored to this buffer before being written to the file
 #endif
 
 //timekeeping
@@ -289,6 +297,8 @@ void loop(void) {
     loop_index++;
   } else if (loop_index == 3) {
     log_to_sd();
+  } else if (loop_index == 4) {
+    displayVariables[V_RPM].intVal = canbus_get_rpm();
     loop_index = 0;
   }
 
@@ -396,6 +406,46 @@ void completeTestPrint(bool pass) {
 }
 
 ////////////////////////////////////////////////////////////////////
+//                             CAN-BUS                            //
+////////////////////////////////////////////////////////////////////
+
+bool canbus_init() {
+  #if ENABLED(CANBUS) 
+    bool success;
+    beginTestPrint("CAN-BUS");
+    if(Canbus.init(CANSPEED_500))  /* Initialise MCP2515 CAN controller at the specified speed */
+      {
+        Serial.println("CAN Init ok");
+        success = true;
+      } else
+      {
+        Serial.println("Can't init CAN");
+        success = false;
+      } 
+  
+      completeTestPrint(success);
+      return success;
+    #else
+      return true;
+    #endif
+}
+
+int canbus_get_rpm() {
+  
+  int engine_rpm = 5000;
+  
+  #if ENABLED(CANBUS) 
+    Canbus.ecu_req(ENGINE_RPM, buffer);
+    Serial.print("Engine RPM: ");
+    Serial.println(buffer);
+
+    engine_rpm = atoi(buffer);
+  #endif
+
+  return engine_rpm;    
+}
+
+////////////////////////////////////////////////////////////////////
 //                           OLED DISPLAY                         //
 ////////////////////////////////////////////////////////////////////
 
@@ -456,7 +506,7 @@ void variables_init() {
   displayVariables[V_SPEED_AVG].symOffset = 20;
 
   displayVariables[V_RPM].type = INT;
-  displayVariables[V_RPM].intVal = 5000;
+  displayVariables[V_RPM].intVal = 2500;
   displayVariables[V_RPM].displaySymbol = "RPM";
   displayVariables[V_RPM].valChanged = true;
   displayVariables[V_RPM].symOffset = 40;
